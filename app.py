@@ -20,7 +20,7 @@ def load_artifacts():
     
     # List of required files
     required_files = [
-        'linear_regression_resume_model.joblib', 'tfidf_vectorizer_cosine.joblib',
+        'linear_regression_model.joblib', 'tfidf_vectorizer_cosine.joblib',
         'skills_vectorizer.joblib', 'edu_vectorizer.joblib', 'exp_vectorizer.joblib',
         'model_columns.joblib', 'unique_categories.joblib'
     ]
@@ -33,7 +33,7 @@ def load_artifacts():
             st.stop()
 
     # Load all artifacts
-    artifacts['model'] = joblib.load(os.path.join(artifacts_dir, 'linear_regression_resume_model.joblib'))
+    artifacts['model'] = joblib.load(os.path.join(artifacts_dir, 'linear_regression_model.joblib'))
     artifacts['tfidf_vectorizer_cosine'] = joblib.load(os.path.join(artifacts_dir, 'tfidf_vectorizer_cosine.joblib'))
     artifacts['skills_vectorizer'] = joblib.load(os.path.join(artifacts_dir, 'skills_vectorizer.joblib'))
     artifacts['edu_vectorizer'] = joblib.load(os.path.join(artifacts_dir, 'edu_vectorizer.joblib'))
