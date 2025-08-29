@@ -1,4 +1,4 @@
-```gitignore
+#```gitignore
 # --- Python General ---
 # Byte-compiled / optimized / C extensions
 __pycache__/
