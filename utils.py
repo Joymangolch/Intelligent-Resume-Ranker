@@ -26,22 +26,25 @@ def prepare_features_for_single_resume(text: str, job_description: str, job_cate
     Will use spaCy only if it can be imported successfully at runtime.
     """
     cols = artifacts.get("model_columns") if isinstance(artifacts, dict) else None
-    if not cols:
-        # very small fallback if no column metadata available
+
+    # Normalize cols to a plain list to avoid ambiguous truth-value checks on Index/ndarray
+    if isinstance(cols, (pd.Index, np.ndarray)):
+        cols = list(cols)
+
+    # Explicitly check for None or empty list
+    if cols is None or len(cols) == 0:
         return pd.DataFrame([[0.0]], columns=["feature_0"])
 
-    # Initialize zeros for all expected model columns
     row = {c: 0.0 for c in cols}
 
-    # Small, safe heuristics to populate a couple of simple features
-    # 1) skill_count from a naive "Skills: ..." section
+    # Naive skills extraction
     m = re.search(r"skills\s*[:\-]?\s*([^.\n]*)", text, re.IGNORECASE)
     skills_text = m.group(1).strip() if m else ""
     skill_count = len(re.findall(r"\w+", skills_text)) if skills_text else 0
     if "skill_count" in row:
         row["skill_count"] = float(skill_count)
 
-    # 2) one-hot job category if a corresponding column exists (e.g. "category_Engineering")
+    # One-hot job category
     category_col = f"category_{job_category}"
     if category_col in row:
         row[category_col] = 1.0
@@ -52,7 +55,6 @@ def prepare_features_for_single_resume(text: str, job_description: str, job_cate
         try:
             doc = NLP(text)
             tokens = [t.lemma_.lower() for t in doc if not t.is_punct and not t.is_space]
-            # example: populate a token_count column if present
             if "token_count" in row:
                 row["token_count"] = float(len(tokens))
         except Exception:
