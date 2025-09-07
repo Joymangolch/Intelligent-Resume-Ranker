@@ -1,31 +1,29 @@
 import streamlit as st
+import re
+import functools
 import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import re
 
-# Try to import spaCy lazily; if it fails we keep NLP = None and provide a fallback
-try:
-    import spacy
+
+# Lazy-load spaCy to avoid importing compiled C extensions at module import time
+@functools.lru_cache(maxsize=1)
+def get_spacy_model():
     try:
-        NLP = spacy.load("en_core_web_sm")
+        import spacy
+        try:
+            return spacy.load("en_core_web_sm")
+        except Exception:
+            return None
     except Exception:
-        # model might not be installed; keep NLP None
-        NLP = None
-except Exception:
-    spacy = None
-    NLP = None
+        return None
 
 
 def prepare_features_for_single_resume(text: str, job_description: str, job_category: str, artifacts: dict):
     """
-    Minimal, safe feature-prep fallback that returns a DataFrame with the same columns
-    as artifacts['model_columns']. This avoids importing spaCy/thinc at module import time
-    and lets the prediction run on Streamlit Cloud where compiled wheels may be unavailable.
-
-    For best results install spaCy and a matching language model locally / on the server
-    and replace this with your original feature extraction logic.
+    Safe feature-prep fallback. Uses artifacts['model_columns'] when available.
+    Will use spaCy only if it can be imported successfully at runtime.
     """
     cols = artifacts.get("model_columns") if isinstance(artifacts, dict) else None
     if not cols:
@@ -48,7 +46,8 @@ def prepare_features_for_single_resume(text: str, job_description: str, job_cate
     if category_col in row:
         row[category_col] = 1.0
 
-    # If spaCy is available you can extend/populate more features here (optional)
+    # Use spaCy only if available (lazy)
+    NLP = get_spacy_model()
     if NLP is not None:
         try:
             doc = NLP(text)
