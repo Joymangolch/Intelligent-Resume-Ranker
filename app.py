@@ -118,12 +118,16 @@ st.title("Intelligent Resume Ranker")
 st.write("Upload a job description and resumes to rank them based on a predictive model.")
 
 # Optionally download artifacts from secrets (if provided)
-if "model" in st.secrets and "url" in st.secrets["model"]:
-    try:
-        download_artifact(st.secrets["model"]["url"], ARTIFACTS_DIR / "linear_regression_model.joblib")
-    except Exception:
-        # don't block if download fails; load_artifacts will report missing files
-        pass
+try:
+    if "model" in st.secrets and "url" in st.secrets["model"]:
+        try:
+            download_artifact(st.secrets["model"]["url"], ARTIFACTS_DIR / "linear_regression_model.joblib")
+        except Exception:
+            # don't block if download fails; load_artifacts will report missing files
+            pass
+except Exception:
+    # secrets.toml not found or not configured; skip
+    pass
 
 artifacts = load_artifacts()
 resume_categories = artifacts["unique_categories"]
@@ -167,9 +171,16 @@ if st.button("Rank Resumes"):
                     continue
 
                 # prepare features and predict
-                feature_vector = prepare_features_for_single_resume(text, job_description, job_category, artifacts)
+                feature_vector = prepare_features_for_single_resume(
+                    text, job_description, job_category, artifacts
+                )
 
-                # per-resume feature debug removed; proceed with prediction
+                # DEBUG: show first few feature values for this resume
+                st.write("DEBUG features for", uploaded.name)
+                try:
+                    st.write(feature_vector.iloc[0].astype(float).round(6).to_dict())
+                except Exception:
+                    st.write(feature_vector.head())
 
                 # model may expect 2D array-like
                 try:
@@ -192,15 +203,11 @@ if st.button("Rank Resumes"):
         if results:
             ranked_df = pd.DataFrame(results)
             ranked_df["Score_float"] = ranked_df["Predicted Score"].str.replace("%", "").astype(float)
-            ranked_df = ranked_df.sort_values(by="Score_float", ascending=False).reset_index(drop=True)
+            ranked_df = ranked_df.sort_values(by="Score_float", ascending=False).drop(columns=["Score_float"])
+            ranked_df = ranked_df.reset_index(drop=True)
 
-            st.header("🏆 Top Candidate")
-            top = ranked_df.iloc[[0]][["Filename", "Predicted Score"]]
-            st.table(top)  # small table showing only the top result
-
-            # optional: still show full ranked table below
-            st.header("All Ranked Results")
-            st.dataframe(ranked_df.drop(columns=["Score_float"]), use_container_width=True)
+            st.header("🏆 Ranked Results")
+            st.dataframe(ranked_df, use_container_width=True)
 
             scores = [float(s.replace("%", "")) for s in ranked_df["Predicted Score"].tolist()]
             st.subheader("Summary Statistics")
@@ -211,5 +218,9 @@ if st.button("Rank Resumes"):
                 st.metric("Highest Score", f"{max(scores):.2f}%")
             with c3:
                 st.metric("Lowest Score", f"{min(scores):.2f}%")
-        else:
-            st.error("Could not process any of the uploaded files. Please check file formats and content.")
+
+            # Warn if all scores are identical
+           # if len(set(scores)) == 1:
+             #   st.warning("All resumes received the same score. Please check your model and feature extraction logic for issues.")
+        #else:
+         #   st.error("Could not process any of the uploaded files. Please check file formats and content.")
