@@ -60,4 +60,13 @@ def prepare_features_for_single_resume(text: str, job_description: str, job_cate
         except Exception:
             pass
 
-    return pd.DataFrame([row], columns=cols)
+    fv = pd.DataFrame([row], columns=cols)
+
+    def ensure_feature_alignment(df, cols):
+        for c in cols:
+            if c not in df.columns:
+                df[c] = 0.0
+        return df[list(cols)]
+
+    fv = ensure_feature_alignment(fv, cols)
+    return fv

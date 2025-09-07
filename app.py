@@ -168,6 +168,14 @@ if st.button("Rank Resumes"):
 
                 # prepare features and predict
                 feature_vector = prepare_features_for_single_resume(text, job_description, job_category, artifacts)
+
+                # DEBUG: show first few feature values for this resume
+                st.write("DEBUG features for", uploaded.name)
+                try:
+                    st.write(feature_vector.iloc[0].astype(float).round(6).to_dict())
+                except Exception:
+                    st.write(feature_vector.head())
+
                 # model may expect 2D array-like
                 try:
                     predicted_score = artifacts["model"].predict(feature_vector)[0]
