@@ -60,6 +60,15 @@ def prepare_features_for_single_resume(text: str, job_description: str, job_cate
         except Exception:
             pass
 
+    # example inside prepare_features_for_single_resume, after extracting text:
+    tfidf_vec = artifacts.get("tfidf_vectorizer_cosine")
+    skills_vec = artifacts.get("skills_vectorizer")
+    if tfidf_vec is not None:
+        tfidf_vals = tfidf_vec.transform([text]).toarray()[0]
+        # map tfidf_vals into corresponding model columns (depends on how you saved columns)
+    # similarly use skills_vec.transform(...)
+    # then ensure the final DataFrame aligns with artifacts["model_columns"]
+
     fv = pd.DataFrame([row], columns=cols)
 
     def ensure_feature_alignment(df, cols):

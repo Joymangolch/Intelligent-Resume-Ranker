@@ -169,10 +169,10 @@ if st.button("Rank Resumes"):
                 # prepare features and predict
                 feature_vector = prepare_features_for_single_resume(text, job_description, job_category, artifacts)
 
-                # DEBUG: show first few feature values for this resume
-                st.write("DEBUG features for", uploaded.name)
+                # DEBUG: show feature vector for this resume (first 20 features)
                 try:
-                    st.write(feature_vector.iloc[0].astype(float).round(6).to_dict())
+                    st.write(f"FEATURES for {uploaded.name}")
+                    st.write(feature_vector.iloc[0].astype(float).round(6).head(20).to_dict())
                 except Exception:
                     st.write(feature_vector.head())
 
@@ -197,11 +197,15 @@ if st.button("Rank Resumes"):
         if results:
             ranked_df = pd.DataFrame(results)
             ranked_df["Score_float"] = ranked_df["Predicted Score"].str.replace("%", "").astype(float)
-            ranked_df = ranked_df.sort_values(by="Score_float", ascending=False).drop(columns=["Score_float"])
-            ranked_df = ranked_df.reset_index(drop=True)
+            ranked_df = ranked_df.sort_values(by="Score_float", ascending=False).reset_index(drop=True)
 
-            st.header("🏆 Ranked Results")
-            st.dataframe(ranked_df, use_container_width=True)
+            st.header("🏆 Top Candidate")
+            top = ranked_df.iloc[[0]][["Filename", "Predicted Score"]]
+            st.table(top)  # small table showing only the top result
+
+            # optional: still show full ranked table below
+            st.header("All Ranked Results")
+            st.dataframe(ranked_df.drop(columns=["Score_float"]), use_container_width=True)
 
             scores = [float(s.replace("%", "")) for s in ranked_df["Predicted Score"].tolist()]
             st.subheader("Summary Statistics")
