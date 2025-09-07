@@ -169,15 +169,7 @@ if st.button("Rank Resumes"):
                 # prepare features and predict
                 feature_vector = prepare_features_for_single_resume(text, job_description, job_category, artifacts)
 
-                # DEBUG: show feature values in a table for this resume
-                with st.expander(f"FEATURES for {uploaded.name}", expanded=False):
-                    try:
-                        fv_row = feature_vector.iloc[0].astype(float).round(6)
-                        feat_df = fv_row.reset_index()
-                        feat_df.columns = ["feature", "value"]
-                        st.dataframe(feat_df, use_container_width=True, height=320)
-                    except Exception:
-                        st.dataframe(feature_vector.reset_index(drop=True), use_container_width=True)
+                # per-resume feature debug removed; proceed with prediction
 
                 # model may expect 2D array-like
                 try:
