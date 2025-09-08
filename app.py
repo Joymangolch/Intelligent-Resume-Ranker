@@ -1,226 +1,157 @@
-import os
-import re
-import io
-from pathlib import Path
+# ======================================================================================
+# app.py - Main Streamlit Application
+#
+# This script creates the user interface and orchestrates the resume ranking process.
+# ======================================================================================
 
 import streamlit as st
 import joblib
+import os
+import fitz       # PyMuPDF is imported under the name 'fitz'
 import pandas as pd
-import requests
+from utils import prepare_features_for_single_resume # All backend logic is in utils.py
 
-# Optional PDF backends
-try:
-    import fitz  # PyMuPDF
-    PDF_BACKEND = "fitz"
-except Exception:
-    fitz = None
-    try:
-        import PyPDF2
-        PDF_BACKEND = "pypdf2"
-    except Exception:
-        PyPDF2 = None
-        PDF_BACKEND = None
+# --- Page Configuration ---
+# This should be the first Streamlit command in your script.
+st.set_page_config(
+    page_title="Intelligent Resume Ranker",
+    page_icon="🤖",
+    layout="wide"
+)
 
-from utils import prepare_features_for_single_resume
-
-st.set_page_config(page_title="Intelligent Resume Ranker", layout="wide")
-
-ARTIFACTS_DIR = Path("artifacts")
-ARTIFACTS_DIR.mkdir(exist_ok=True)
-
-
-@st.cache_resource
-def download_artifact(url: str, dest: Path) -> Path:
-    if not dest.exists():
-        r = requests.get(url, stream=True)
-        r.raise_for_status()
-        with open(dest, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
-    return dest
-
-
+# --- Caching Loaded Artifacts ---
 @st.cache_resource
 def load_artifacts():
-    """Load required joblib artifacts from artifacts directory."""
+    """
+    Loads all the necessary machine learning artifacts from the 'artifacts' directory.
+    This function is cached to ensure models are loaded only once, improving app performance.
+    """
     artifacts = {}
-    artifacts_dir = ARTIFACTS_DIR
-
+    artifacts_dir = 'artifacts'
+    
+    # List of all required files for the application to function.
     required_files = [
-        "linear_regression_model.joblib",
-        "tfidf_vectorizer_cosine.joblib",
-        "skills_vectorizer.joblib",
-        "edu_vectorizer.joblib",
-        "exp_vectorizer.joblib",
-        "model_columns.joblib",
-        "unique_categories.joblib",
+        'linear_regression_model.joblib', 'tfidf_vectorizer_cosine.joblib',
+        'skills_vectorizer.joblib', 'edu_vectorizer.joblib', 'exp_vectorizer.joblib',
+        'model_columns.joblib', 'unique_categories.joblib'
     ]
+    
+    # This loop checks if all necessary files are present before loading them.
+    # It provides a clear error message if a file is missing during deployment.
+    for filename in required_files:
+        path = os.path.join(artifacts_dir, filename)
+        if not os.path.exists(path):
+            st.error(f"Missing artifact file: {filename}. Please ensure all required .joblib files are in the 'artifacts' folder and have been pushed to your GitHub repository.")
+            st.stop() # Halts the app if a critical file is missing.
 
-    missing = [f for f in required_files if not (artifacts_dir / f).exists()]
-    if missing:
-        st.error(f"Missing artifact files: {', '.join(missing)}. Place them in the 'artifacts' folder.")
-        st.stop()
+    # Load all artifacts into a dictionary.
+    artifacts['model'] = joblib.load(os.path.join(artifacts_dir, 'linear_regression_model.joblib'))
+    artifacts['tfidf_vectorizer_cosine'] = joblib.load(os.path.join(artifacts_dir, 'tfidf_vectorizer_cosine.joblib'))
+    artifacts['skills_vectorizer'] = joblib.load(os.path.join(artifacts_dir, 'skills_vectorizer.joblib'))
+    artifacts['edu_vectorizer'] = joblib.load(os.path.join(artifacts_dir, 'edu_vectorizer.joblib'))
+    artifacts['exp_vectorizer'] = joblib.load(os.path.join(artifacts_dir, 'exp_vectorizer.joblib'))
+    artifacts['model_columns'] = joblib.load(os.path.join(artifacts_dir, 'model_columns.joblib'))
+    artifacts['unique_categories'] = joblib.load(os.path.join(artifacts_dir, 'unique_categories.joblib'))
+    
+    return artifacts
 
+# --- Helper functions to read uploaded files ---
+def read_pdf(file):
+    """Reads and extracts text from an uploaded PDF file."""
     try:
-        artifacts["model"] = joblib.load(artifacts_dir / "linear_regression_model.joblib")
-        artifacts["tfidf_vectorizer_cosine"] = joblib.load(artifacts_dir / "tfidf_vectorizer_cosine.joblib")
-        artifacts["skills_vectorizer"] = joblib.load(artifacts_dir / "skills_vectorizer.joblib")
-        artifacts["edu_vectorizer"] = joblib.load(artifacts_dir / "edu_vectorizer.joblib")
-        artifacts["exp_vectorizer"] = joblib.load(artifacts_dir / "exp_vectorizer.joblib")
-        artifacts["model_columns"] = joblib.load(artifacts_dir / "model_columns.joblib")
-        artifacts["unique_categories"] = joblib.load(artifacts_dir / "unique_categories.joblib")
-        return artifacts
+        # Open the PDF file from the uploaded file's stream
+        doc = fitz.open(stream=file.read(), filetype="pdf")
+        text = "".join(page.get_text() for page in doc)
+        return text
     except Exception as e:
-        st.error(f"Error loading artifacts: {e}")
-        st.stop()
-
-
-def read_pdf(uploaded_file) -> str | None:
-    try:
-        data = uploaded_file.read()
-        if PDF_BACKEND == "fitz":
-            doc = fitz.open(stream=data, filetype="pdf")
-            text = "".join(page.get_text() for page in doc)
-            doc.close()
-            return text
-        elif PDF_BACKEND == "pypdf2":
-            reader = PyPDF2.PdfReader(io.BytesIO(data))
-            text = ""
-            for page in reader.pages:
-                text += page.extract_text() or ""
-            return text
-        else:
-            st.error("No PDF library installed. Install pymupdf or PyPDF2.")
-            return None
-    except Exception as e:
-        st.error(f"Error reading PDF {getattr(uploaded_file, 'name', '')}: {e}")
+        st.error(f"Error reading PDF file '{file.name}': {e}")
         return None
 
-
-def read_txt(uploaded_file) -> str | None:
+def read_txt(file):
+    """Reads and decodes text from an uploaded TXT file."""
     try:
-        data = uploaded_file.read()
-        if isinstance(data, bytes):
-            return data.decode("utf-8", errors="ignore")
-        return str(data)
+        return file.getvalue().decode("utf-8")
     except Exception as e:
-        st.error(f"Error reading TXT {getattr(uploaded_file, 'name', '')}: {e}")
+        st.error(f"Error reading TXT file '{file.name}': {e}")
         return None
 
+# --- Main Application ---
+st.title("🤖 Intelligent Resume Ranker")
+st.write("Upload a job description and one or more resumes to automatically rank candidates based on their relevance.")
 
-def extract_skills(text: str) -> str:
-    match = re.search(r"skills\s*[:\-]?\s*([^.\n]*)", text, re.IGNORECASE)
-    return match.group(1).strip() if match else ""
-
-
-# --- Main app UI ---
-st.title("Intelligent Resume Ranker")
-st.write("Upload a job description and resumes to rank them based on a predictive model.")
-
-# Optionally download artifacts from secrets (if provided)
-try:
-    if "model" in st.secrets and "url" in st.secrets["model"]:
-        try:
-            download_artifact(st.secrets["model"]["url"], ARTIFACTS_DIR / "linear_regression_model.joblib")
-        except Exception:
-            # don't block if download fails; load_artifacts will report missing files
-            pass
-except Exception:
-    # secrets.toml not found or not configured; skip
-    pass
-
+# Load all artifacts. The app will stop here if files are missing.
 artifacts = load_artifacts()
-resume_categories = artifacts["unique_categories"]
+# Load job categories from the artifact, not from a CSV file.
+resume_categories = artifacts['unique_categories']
 
+# --- UI Layout ---
+# Use a two-column layout for a clean user interface.
 col1, col2 = st.columns([1, 1])
 
 with col1:
     st.header("Step 1: Job Details")
     job_category = st.selectbox("Select Job Category", options=resume_categories)
-    job_description = st.text_area(
-        "Paste Job Description Here",
-        height=300,
-        placeholder="E.g., We are looking for a Data Scientist...",
-    )
+    job_description = st.text_area("Paste Job Description Here", height=300, placeholder="E.g., We are looking for a Data Scientist with experience in Python and Machine Learning...")
 
 with col2:
     st.header("Step 2: Upload Resumes")
     uploaded_files = st.file_uploader(
         "Choose resume files (PDF or TXT)",
-        type=["pdf", "txt"],
-        accept_multiple_files=True,
-        help="Upload one or more PDF or TXT resume files",
+        type=['pdf', 'txt'],
+        accept_multiple_files=True
     )
 
-if st.button("Rank Resumes"):
-    if not uploaded_files:
-        st.warning("Please upload at least one resume.")
-    elif not job_description or job_description.strip() == "":
+# --- Processing and Ranking Logic ---
+# This block executes only when the user clicks the "Rank Resumes" button.
+if st.button("Rank Resumes", type="primary", use_container_width=True):
+    # Input validation
+    if not job_description.strip():
         st.warning("Please provide a job description.")
+    elif not uploaded_files:
+        st.warning("Please upload at least one resume.")
     else:
-        results = []
-        for uploaded in uploaded_files:
-            try:
-                if uploaded.type == "application/pdf" or uploaded.name.lower().endswith(".pdf"):
-                    text = read_pdf(uploaded)
-                else:
-                    text = read_txt(uploaded)
+        # Show a spinner while processing.
+        with st.spinner('Analyzing resumes... This may take a moment.'):
+            results = []
+            # Process each uploaded file.
+            for file in uploaded_files:
+                resume_text = ""
+                if file.type == "application/pdf":
+                    resume_text = read_pdf(file)
+                elif file.type == "text/plain":
+                    resume_text = read_txt(file)
+                
+                if resume_text:
+                    # Call the backend function from utils.py to get the feature vector.
+                    feature_vector = prepare_features_for_single_resume(
+                        resume_text, job_description, job_category, artifacts
+                    )
+                    # Use the loaded model to predict the score.
+                    predicted_score = artifacts['model'].predict(feature_vector)[0]
+                    
+                    # Store the results.
+                    results.append({
+                        'Filename': file.name,
+                        # Clamp the score between 0 and 100 for display purposes.
+                        'Predicted Score': f"{max(0, min(100, predicted_score)):.2f}%"
+                    })
+            
+            # Display the results.
+            if results:
+                st.header("🏆 Ranked Results")
+                # Create and format the results DataFrame.
+                ranked_df = pd.DataFrame(results)
+                ranked_df['Score_float'] = ranked_df['Predicted Score'].str.replace('%', '').astype(float)
+                ranked_df = ranked_df.sort_values(by='Score_float', ascending=False).drop(columns=['Score_float'])
+                ranked_df = ranked_df.reset_index(drop=True)
+                ranked_df.index += 1 # Start rank from 1 instead of 0.
 
-                if not text or not text.strip():
-                    st.warning(f"Could not extract text from {uploaded.name}")
-                    continue
+                # Show the top candidate separately
+                top_candidate = ranked_df.iloc[0]
+                st.subheader("🎯 Top Candidate")
+                st.markdown(f"**{top_candidate['Filename']}** — **Score:** {top_candidate['Predicted Score']}")
 
-                # prepare features and predict
-                feature_vector = prepare_features_for_single_resume(
-                    text, job_description, job_category, artifacts
-                )
-
-                # DEBUG: show first few feature values for this resume
-                st.write("DEBUG features for", uploaded.name)
-                try:
-                    st.write(feature_vector.iloc[0].astype(float).round(6).to_dict())
-                except Exception:
-                    st.write(feature_vector.head())
-
-                # model may expect 2D array-like
-                try:
-                    predicted_score = artifacts["model"].predict(feature_vector)[0]
-                except Exception as e:
-                    st.error(f"Model prediction failed for {uploaded.name}: {e}")
-                    continue
-
-                try:
-                    score = float(predicted_score)
-                except Exception:
-                    score = 0.0
-
-                # clamp and format
-                score = max(0.0, min(100.0, score))
-                results.append({"Filename": uploaded.name, "Predicted Score": f"{score:.2f}%"})
-            except Exception as e:
-                st.error(f"Error processing {uploaded.name}: {e}")
-
-        if results:
-            ranked_df = pd.DataFrame(results)
-            ranked_df["Score_float"] = ranked_df["Predicted Score"].str.replace("%", "").astype(float)
-            ranked_df = ranked_df.sort_values(by="Score_float", ascending=False).drop(columns=["Score_float"])
-            ranked_df = ranked_df.reset_index(drop=True)
-
-            st.header("🏆 Ranked Results")
-            st.dataframe(ranked_df, use_container_width=True)
-
-            scores = [float(s.replace("%", "")) for s in ranked_df["Predicted Score"].tolist()]
-            st.subheader("Summary Statistics")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.metric("Average Score", f"{(sum(scores) / len(scores)):.2f}%")
-            with c2:
-                st.metric("Highest Score", f"{max(scores):.2f}%")
-            with c3:
-                st.metric("Lowest Score", f"{min(scores):.2f}%")
-
-            # Warn if all scores are identical
-           # if len(set(scores)) == 1:
-             #   st.warning("All resumes received the same score. Please check your model and feature extraction logic for issues.")
-        #else:
-         #   st.error("Could not process any of the uploaded files. Please check file formats and content.")
+                # Show the full ranking table
+                st.dataframe(ranked_df, width='stretch')
+            else:
+                st.error("Could not process any of the uploaded files. Please check the file formats and try again.")
